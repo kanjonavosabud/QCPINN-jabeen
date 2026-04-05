@@ -180,3 +180,7 @@ old/*
 
 src/notebooks/training
 models/old
+
+# matplotlib cache
+.matplotlib/
+.cache/

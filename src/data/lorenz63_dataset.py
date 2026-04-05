@@ -7,6 +7,7 @@ default_beta = 8.0 / 3.0
 default_t0 = 0.0
 default_t1 = 2.0
 default_dt = 0.001
+default_initial_state = (1.0, 1.0, 1.0)
 
 
 class Sampler:
@@ -25,6 +26,15 @@ class Sampler:
         )
         y = self.func(x.to(self.device))
         return x, y
+
+
+def _to_initial_state_tensor(initial_state, device):
+    initial_state_tensor = torch.as_tensor(
+        initial_state, dtype=torch.float32, device=device
+    ).flatten()
+    if initial_state_tensor.numel() != 3:
+        raise ValueError("initial_state must contain exactly three values")
+    return initial_state_tensor
 
 
 def lorenz_rhs(
@@ -63,15 +73,21 @@ def build_reference_trajectory(
     t0=default_t0,
     t1=default_t1,
     dt=default_dt,
-    initial_state=(1.0, 1.0, 1.0),
+    initial_state=default_initial_state,
     sigma=default_sigma,
     rho=default_rho,
     beta=default_beta,
 ):
+    if dt <= 0:
+        raise ValueError("dt must be positive")
+    if t1 <= t0:
+        raise ValueError("t1 must be greater than t0")
+
+    initial_state_tensor = _to_initial_state_tensor(initial_state, device)
     num_steps = int(round((t1 - t0) / dt)) + 1
     t_ref = torch.linspace(t0, t1, num_steps, dtype=torch.float32, device=device).unsqueeze(1)
     u_ref = torch.zeros((num_steps, 3), dtype=torch.float32, device=device)
-    u_ref[0] = torch.tensor(initial_state, dtype=torch.float32, device=device)
+    u_ref[0] = initial_state_tensor
 
     for idx in range(num_steps - 1):
         current_state = u_ref[idx : idx + 1]
@@ -105,7 +121,7 @@ def u(
     t,
     t_ref=None,
     u_ref=None,
-    initial_state=(1.0, 1.0, 1.0),
+    initial_state=default_initial_state,
     sigma=default_sigma,
     rho=default_rho,
     beta=default_beta,
@@ -132,29 +148,36 @@ def r(t):
     return torch.zeros((t.shape[0], 3), dtype=torch.float32, device=t.device)
 
 
-def generate_training_dataset(device="cpu"):
-    initial_state = (1.0, 1.0, 1.0)
+def generate_training_dataset(
+    device="cpu",
+    initial_state=default_initial_state,
+    sigma=default_sigma,
+    rho=default_rho,
+    beta=default_beta,
+    t0=default_t0,
+    t1=default_t1,
+    dt=default_dt,
+):
+    initial_state_tensor = _to_initial_state_tensor(initial_state, device)
     t_ref, u_ref = build_reference_trajectory(
         device=device,
-        t0=default_t0,
-        t1=default_t1,
-        dt=default_dt,
-        initial_state=initial_state,
-        sigma=default_sigma,
-        rho=default_rho,
-        beta=default_beta,
+        t0=t0,
+        t1=t1,
+        dt=dt,
+        initial_state=initial_state_tensor,
+        sigma=sigma,
+        rho=rho,
+        beta=beta,
     )
 
     ics_coords = torch.tensor(
-        [[default_t0], [default_t0]], dtype=torch.float32, device=device
+        [[t0], [t0]], dtype=torch.float32, device=device
     )
     dom_coords = torch.tensor(
-        [[default_t0], [default_t1]], dtype=torch.float32, device=device
+        [[t0], [t1]], dtype=torch.float32, device=device
     )
 
-    initial_state_tensor = torch.tensor(
-        initial_state, dtype=torch.float32, device=device
-    ).unsqueeze(0)
+    initial_state_tensor = initial_state_tensor.unsqueeze(0)
 
     ics_sampler = Sampler(
         1,

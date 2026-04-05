@@ -167,3 +167,122 @@ If you find this work useful, please consider citing:
 	year={2025},
 }
 ```
+
+## Lorenz63 Dataset Utilities
+
+This repository now also includes a configurable Lorenz63 dataset helper and a small verification script:
+
+- `src/data/lorenz63_dataset.py`
+- `src/testing/lorenz63_dataset_test.py`
+
+The dataset module is designed in the same spirit as the other files under `src/data/`, but adapted for the Lorenz63 dynamical system rather than a PDE with spatial boundary conditions.
+
+### What `src/data/lorenz63_dataset.py` Provides
+
+- `lorenz_rhs(...)`: Lorenz63 right-hand side
+- `rk4_step(...)`: one Runge-Kutta 4 step
+- `build_reference_trajectory(...)`: builds a reference trajectory in time
+- `u(...)`: returns reference states interpolated at requested time points
+- `r(...)`: returns zero residual targets with shape `(N, 3)`
+- `generate_training_dataset(...)`: returns the Lorenz63 training samplers
+
+The dataset factory returns:
+
+```python
+[ics_sampler, [traj_sampler], res_sampler]
+```
+
+where:
+
+- `ics_sampler` gives the initial condition at `t0`
+- `traj_sampler` gives trajectory supervision values over the selected time interval
+- `res_sampler` gives zero residual targets over the selected time interval
+
+### Configurable Parameters
+
+External callers can choose:
+
+- `initial_state`
+- `sigma`
+- `rho`
+- `beta`
+- `t0`
+- `t1`
+- `dt`
+
+Example:
+
+```python
+from src.data.lorenz63_dataset import generate_training_dataset
+
+ics_sampler, traj_samplers, res_sampler = generate_training_dataset(
+    device="cpu",
+    initial_state=(2.0, 3.0, 4.0),
+    sigma=14.0,
+    rho=35.0,
+    beta=3.0,
+    t0=0.0,
+    t1=1.0,
+    dt=0.002,
+)
+```
+
+### Verifying The Dataset
+
+The verification script checks that:
+
+- the initial-condition sampler is constant at the chosen initial state
+- the trajectory sampler matches the reference trajectory interpolation
+- the residual sampler returns zeros with the expected shape
+
+It also saves:
+
+- a time-series plot of `x(t)`, `y(t)`, and `z(t)`
+- a 3D phase portrait plot
+- a log file with the sampled shapes and verification metrics
+
+Run it from the repository root with:
+
+```bash
+venv/bin/python src/testing/lorenz63_dataset_test.py
+```
+
+### Running With Custom Lorenz63 Parameters
+
+You can choose the initial point and the Lorenz63 parameters from the command line:
+
+```bash
+venv/bin/python src/testing/lorenz63_dataset_test.py \
+  --x0 2.0 --y0 3.0 --z0 4.0 \
+  --sigma 14.0 --rho 35.0 --beta 3.0 \
+  --t0 0.0 --t1 1.0 --dt 0.002
+```
+
+The script writes outputs under:
+
+```text
+src/testing_checkpoints/lorenz63_dataset/
+```
+
+Each run creates a timestamped directory containing:
+
+- `output.log`
+- `lorenz63_time_series.png`
+- `lorenz63_phase_plot.png`
+
+### Notes
+
+- The script is written so it can be launched directly without manually setting `PYTHONPATH`.
+- It also configures a safe non-interactive Matplotlib backend and cache directories automatically.
+- Make sure the repository virtual environment contains `torch` and `matplotlib` before running the test script.
+
+### Next Steps
+
+These are just working notes for future Lorenz63 integration work:
+
+- Add a `lorenz63_operator(...)` function to `src/nn/pde.py`.
+- Add a dedicated `src/trainer/lorenz63_train.py`.
+- Decide whether Lorenz63 training should use only physics loss plus the initial condition, or also include trajectory supervision points.
+- Add a Lorenz63 training entry point similar to the other `src/trainer/*_hybrid_trainer.py` files.
+- Add a Lorenz63 evaluation or plotting script for trained models, similar to the existing scripts under `src/contour_plots/` or `src/testing/`.
+- Decide how Lorenz63 configuration should be passed around consistently, for example through one shared `args` block.
